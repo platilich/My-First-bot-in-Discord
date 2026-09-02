@@ -4,7 +4,7 @@ from config import SCHEDULES
 
 
 def create_schedule_embed(day_index: int) -> discord.Embed:
-    if day_index > 4:
+    if int(day_index) > 4:
         embed = discord.Embed(
             title="Weekend!",
             description="No classes today. Have a great rest!",
@@ -21,9 +21,10 @@ def create_schedule_embed(day_index: int) -> discord.Embed:
     for time_slot, subject, room in day_data["lessons"]:
         room_text = f"`[{room}]`" if room != "-" else ""
         embed.add_field(
-            name=f"------\n{time_slot}",
+            name=f"---------------------------\n{time_slot}",
             value=f"**{subject}**\n{room_text}",
             inline=False,
         )
+
 
     return embed

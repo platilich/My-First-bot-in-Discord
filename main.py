@@ -2,13 +2,15 @@ import discord
 from discord.ext import commands, tasks
 
 
-from config import token, admin
+from config import token, admin, default_timezone, default_city
 from schedule import create_schedule_embed
-
+from pareser import get_weather
 
 from random import randint
 from datetime import datetime
 import pytz
+
+
 
 # Настраиваем "интенты" (привилегии) бота.
 # message_content нужен, чтобы бот мог читать текст обычных сообщений.
@@ -28,7 +30,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 
 
-TZ = pytz.timezone('Europe/Belgrade')
+TZ = pytz.timezone(default_timezone)
 
 
 
@@ -41,32 +43,30 @@ async def morning_greeting():
         user = await bot.fetch_user(admin)
 
 
+        weather_today = get_weather(default_city)
         embed_schedule = create_schedule_embed(now.weekday())
 
-
-
-        await user.send(f'Hello', embed=embed_schedule)
+        await user.send(weather_today, embed=embed_schedule)
 
 
 
-# Событие: Бот успешно подключился к серверам Discord
+# Событие: Бот успешно подключился к серверам Discord.
+# on_ready вызывается и при первом входе, и при каждом реконнекте.
 @bot.event
 async def on_ready():
     print(f"Робот {bot.user.name} успешно запущен и готов к работе!")
     try:
         # Синхронизируем слэш-команды (/) с серверами Discord.
         # Это нужно, чтобы команды появились в интерфейсе Дискорда.
-
         synced_command = await bot.tree.sync()
 
+
         print(f"Синхронизировано команд: {len(synced_command)}")
-
-
     except Exception as e:
         print(f"Ошибка синхронизации команд: {e}")
 
-
-    morning_greeting.start()
+    if not morning_greeting.is_running():
+        morning_greeting.start()
 
 
 
@@ -82,6 +82,7 @@ async def on_message(message):
         await message.channel.send(f"Привет, {message.author.mention}! Как дела?")
 
 
+
     # эта строка необходима, если вы захотите совмещать обычные команды и слэш-команды
     await bot.process_commands(message)
 
@@ -91,10 +92,9 @@ async def on_message(message):
 async def get_schedule(interaction: discord.Interaction):
     user_id = interaction.user.id
 
-
     if user_id != admin:
         await interaction.response.send_message("You don't have enough rights")
-
+        return
 
     now = datetime.now(TZ)
     embed_schedule = create_schedule_embed(now.weekday())
@@ -107,9 +107,8 @@ async def get_schedule(interaction: discord.Interaction):
 # Пример 2: Современная слэш-команда (/ping)
 @bot.tree.command(name="ping", description="Проверить задержку бота")
 async def ping(interaction: discord.Interaction):
-    # Вычисляем пинг в миллисекундах
     latency = round(bot.latency * 1000)
-    # Отвечаем пользователю на его команду
+
     await interaction.response.send_message(f"Понг! Задержка: {latency}мс")
 
 
@@ -127,6 +126,21 @@ async def about(interaction: discord.Interaction):
 async def random_number(interaction: discord.Interaction):
     random_number = randint(1, 10)
     await interaction.response.send_message(f'Случайное число: {random_number}')
+
+
+
+
+
+@bot.tree.command(name='weather', description='Find out the weather')
+async def weather(interaction: discord.Interaction, city_param: str=default_city):
+    await interaction.response.defer()
+
+
+    response = get_weather(city_param)
+
+
+    await interaction.followup.send(response)
+
 
 
 
