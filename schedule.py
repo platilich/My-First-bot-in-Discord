@@ -1,5 +1,5 @@
 import discord
-from config import SCHEDULES
+from config_scheduled import SCHEDULES
 
 
 

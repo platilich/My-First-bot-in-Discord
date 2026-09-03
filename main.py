@@ -1,44 +1,39 @@
+# main
 import discord
 from discord.ext import commands, tasks
-
-
-from config import token, admin, default_timezone, default_city
-from schedule import create_schedule_embed
-from pareser import get_weather
-
+from deep_translator import GoogleTranslator
 from random import randint
 from datetime import datetime
 import pytz
 
 
+# config
+from config import token, admin, default_timezone, default_city
 
-# Настраиваем "интенты" (привилегии) бота.
-# message_content нужен, чтобы бот мог читать текст обычных сообщений.
+
+# my modules
+from schedule import create_schedule_embed
+from pareser import get_weather
+from db import init_db, add_user, new_word, list_word
+
+
+
+
+
+
 
 
 intents = discord.Intents.default()
-intents.message_content = True
-
-
-
-
-# Создаем экземпляр бота. Командный префикс устарел,
-# но необходим для инициализации класса Bot.
 bot = commands.Bot(command_prefix="!", intents=intents)
-
-
-
-
-
 TZ = pytz.timezone(default_timezone)
 
 
 
 
-
-@tasks.loop(seconds=60)  # Проверка раз в минуту достаточно для точности до минуты
+@tasks.loop(seconds=60)
 async def morning_greeting():
-    now = datetime.now(TZ) # Проверяем: текущее время 7:15:00 - 7:15:59
+    now = datetime.now(TZ)
+
     if now.hour == 7 and now.minute == 15:
         user = await bot.fetch_user(admin)
 
@@ -47,6 +42,8 @@ async def morning_greeting():
         embed_schedule = create_schedule_embed(now.weekday())
 
         await user.send(weather_today, embed=embed_schedule)
+
+
 
 
 
@@ -62,6 +59,7 @@ async def on_ready():
 
 
         print(f"Синхронизировано команд: {len(synced_command)}")
+
     except Exception as e:
         print(f"Ошибка синхронизации команд: {e}")
 
@@ -70,27 +68,15 @@ async def on_ready():
 
 
 
-# Пример 1: Реагирование на обычное текстовое сообщение в чате
-@bot.event
-async def on_message(message):
-    # Важно: игнорируем сообщения от самого бота, чтобы не было бесконечного цикла
-    if message.author == bot.user:
-        return
-
-    # Если кто-то написал "привет" (без учета регистра), бот ответит
-    if message.content.lower() == "привет":
-        await message.channel.send(f"Привет, {message.author.mention}! Как дела?")
 
 
-
-    # эта строка необходима, если вы захотите совмещать обычные команды и слэш-команды
-    await bot.process_commands(message)
-
-
-
-@bot.tree.command(name='schedule', description='Расписание')
+@bot.tree.command(name='schedule', description='Schedule of subjects')
 async def get_schedule(interaction: discord.Interaction):
     user_id = interaction.user.id
+    username = str(interaction.user)
+
+    add_user(user_id, username)
+
 
     if user_id != admin:
         await interaction.response.send_message("You don't have enough rights")
@@ -99,33 +85,48 @@ async def get_schedule(interaction: discord.Interaction):
     now = datetime.now(TZ)
     embed_schedule = create_schedule_embed(now.weekday())
 
-    await interaction.response.send_message(f'Hello!', embed=embed_schedule)
+    await interaction.response.send_message(embed=embed_schedule)
 
 
 
 
-# Пример 2: Современная слэш-команда (/ping)
-@bot.tree.command(name="ping", description="Проверить задержку бота")
+@bot.tree.command(name="ping", description="Check bot latency")
 async def ping(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    username = str(interaction.user)
+
+    add_user(user_id, username)
+
+
     latency = round(bot.latency * 1000)
 
-    await interaction.response.send_message(f"Понг! Задержка: {latency}мс")
+    await interaction.response.send_message(f"Pong! Delay: {latency}ms")
 
 
 
 
-# мои комманды:
-@bot.tree.command(name='about', description='О боте')
+
+@bot.tree.command(name='about', description='About the bot')
 async def about(interaction: discord.Interaction):
-    await interaction.response.send_message('Этот бот написан: @plat0855\nНа Python')
+    user_id = interaction.user.id
+    username = str(interaction.user)
+
+    add_user(user_id, username)
+
+    await interaction.response.send_message('Creator: @plat0855\nWritten in Python')
 
 
 
 
-@bot.tree.command(name='random_number', description='Случайное число')
+@bot.tree.command(name='random_number', description='Random number')
 async def random_number(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    username = str(interaction.user)
+
+    add_user(user_id, username)
+
     random_number = randint(1, 10)
-    await interaction.response.send_message(f'Случайное число: {random_number}')
+    await interaction.response.send_message(f'Random number: {random_number}')
 
 
 
@@ -133,6 +134,11 @@ async def random_number(interaction: discord.Interaction):
 
 @bot.tree.command(name='weather', description='Find out the weather')
 async def weather(interaction: discord.Interaction, city_param: str=default_city):
+    user_id = interaction.user.id
+    username = str(interaction.user)
+
+    add_user(user_id, username)
+
     await interaction.response.defer()
 
 
@@ -145,4 +151,43 @@ async def weather(interaction: discord.Interaction, city_param: str=default_city
 
 
 
+
+@bot.tree.command(name='add', description='Add new Italian word')
+async def add_new_italian_word(interaction: discord.Interaction, italian_word: str):
+    user_id = interaction.user.id
+    username = str(interaction.user)
+
+
+    await interaction.response.defer()
+
+
+    translated = GoogleTranslator(source='it', target='en').translate(italian_word)
+
+
+
+
+    result_from_bd = new_word(user_id, username, italian_word, translated)
+
+
+    await interaction.followup.send(result_from_bd)
+
+
+
+@bot.tree.command(name='dictionary', description='My dictionary')
+async def words(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    username = str(interaction.user)
+
+
+    result_from_bd = list_word(user_id, username)
+
+
+    await interaction.response.send_message(result_from_bd)
+
+
+
+
+
+
+init_db()
 bot.run(token)
