@@ -1,6 +1,8 @@
 import requests
 
-def get_weather(city: str):
+
+
+def get_weather(city):
     geo = requests.get(
         "https://geocoding-api.open-meteo.com/v1/search",
         params={"name": city, "count": 1, "language": "en"}

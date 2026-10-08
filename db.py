@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 
 
-DB_PATH = Path(__file__).parent / "bot.db"
+DB_PATH = Path(__file__).parent / "users.db"
 
 
 def get_connection():
@@ -18,28 +18,26 @@ def init_db():
             """
             CREATE TABLE IF NOT EXISTS users (
                 discord_id INTEGER PRIMARY KEY,
-                username TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                nickname TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                cursing INTEGER
             )
             """
         )
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS words (
+            CREATE TABLE IF NOT EXISTS gifs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                italian_word TEXT NOT NULL,
-                translation TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, italian_word COLLATE NOCASE),
-                FOREIGN KEY (user_id) REFERENCES users(discord_id)
+                url_gif TEXT NOT NULL,
+                discord_id INTEGER NOT NULL,
+                FOREIGN KEY (discord_id) REFERENCES users (discord_id) ON DELETE CASCADE
             )
             """
         )
         conn.commit()
 
 
-def add_user(discord_id: int, username: str) -> str:
+def save_user(discord_id, nickname):
     with get_connection() as conn:
         existing = conn.execute(
             "SELECT discord_id FROM users WHERE discord_id = ?",
@@ -48,92 +46,62 @@ def add_user(discord_id: int, username: str) -> str:
 
         if existing:
             conn.execute(
-                "UPDATE users SET username = ? WHERE discord_id = ?",
-                (username, discord_id),
+                "UPDATE users SET nickname = ? WHERE discord_id = ?",
+                (nickname, discord_id),
             )
             conn.commit()
-            return "Ты уже зарегистрирован!"
+            return
 
         conn.execute(
-            "INSERT INTO users (discord_id, username) VALUES (?, ?)",
-            (discord_id, username),
+            "INSERT INTO users (discord_id, nickname) VALUES (?, ?)",
+            (discord_id, nickname),
         )
         conn.commit()
-        return "Добро пожаловать! Ты зарегистрирован."
+
+        return
 
 
-def _ensure_user(conn: sqlite3.Connection, discord_id: int, username: str) -> None:
-    conn.execute(
-        "INSERT OR IGNORE INTO users (discord_id, username) VALUES (?, ?)",
-        (discord_id, username),
-    )
-    conn.execute(
-        "UPDATE users SET username = ? WHERE discord_id = ?",
-        (username, discord_id),
-    )
 
-
-def new_word(
-    discord_id: int,
-    username: str,
-    italian_word: str,
-    translation: str | None = None,
-) -> str:
-    italian_word = italian_word.strip()
-    translation = translation.strip() if translation else None
-
-
-    if not italian_word:
-        return "Слово не может быть пустым."
-
+def curse_count(discord_id):
     with get_connection() as conn:
-        _ensure_user(conn, discord_id, username)
+        try:
+            conn.execute('UPDATE users SET cursing = cursing + 1 WHERE discord_id = ?', (discord_id, ))
 
+            conn.commit()
+
+
+        except Exception as e:
+            print(e)
+
+
+
+def save_gif(discord_id, gif_url):
+    with get_connection() as conn:
         try:
             conn.execute(
                 """
-                INSERT INTO words (user_id, italian_word, translation)
-                VALUES (?, ?, ?)
+                INSERT INTO gifs (discord_id, url_gif)
+                VALUES (?, ?)
                 """,
-                (discord_id, italian_word, translation),
+                (discord_id, gif_url),
             )
             conn.commit()
+
         except sqlite3.IntegrityError:
-            return f"Слово «{italian_word}» уже есть в твоём словаре."
-
-    if translation:
-        return f"Добавлено: **{italian_word}** — {translation}"
-    return f"Добавлено: **{italian_word}**"
+            return f"Gif {gif_url} already added."
 
 
-def list_word(discord_id: int, username: str) -> str:
+    return f"Added"
+
+
+
+def list_gifs():
     with get_connection() as conn:
-        _ensure_user(conn, discord_id, username)
-        conn.commit()
 
-        rows = conn.execute(
-            """
-            SELECT italian_word, translation
-            FROM words
-            WHERE user_id = ?
-            ORDER BY created_at ASC, id ASC
-            """,
-            (discord_id,),
-        ).fetchall()
+        rows = conn.execute('SELECT url_gif FROM gifs').fetchall()
 
     if not rows:
-        return "Словарь пуст. Добавь слово командой `/add`."
+        return False
 
-    lines = [f"Твои итальянские слова ({len(rows)}):"]
-    for i, row in enumerate(rows, 1):
-        word = row["italian_word"]
-        translation = row["translation"]
-        if translation:
-            lines.append(f"{i}. **{word}** — {translation}")
-        else:
-            lines.append(f"{i}. **{word}**")
 
-    text = "\n".join(lines)
-    if len(text) > 1900:
-        text = text[:1900] + "\n…"
-    return text
+    return [gif['url_gif'] for gif in rows]

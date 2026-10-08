@@ -1,60 +1,24 @@
-# main
 import discord
-from discord.ext import commands, tasks
-from deep_translator import GoogleTranslator
-from random import randint
-from datetime import datetime
-import pytz
-
-
-# config
-from config import token, admin, default_timezone, default_city
-
-
-# my modules
-from schedule import create_schedule_embed
+from discord.ext import commands
+from dotenv import load_dotenv
 from pareser import get_weather
-from db import init_db, add_user, new_word, list_word
+from random import randint, choice
+import os
+from db import init_db, save_user, save_gif, list_gifs
 
-
-
-
-
+import requests
 
 
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
-TZ = pytz.timezone(default_timezone)
 
 
 
-
-@tasks.loop(seconds=60)
-async def morning_greeting():
-    now = datetime.now(TZ)
-
-    if now.hour == 7 and now.minute == 15:
-        user = await bot.fetch_user(admin)
-
-
-        weather_today = get_weather(default_city)
-        embed_schedule = create_schedule_embed(now.weekday())
-
-        await user.send(weather_today, embed=embed_schedule)
-
-
-
-
-
-# Событие: Бот успешно подключился к серверам Discord.
-# on_ready вызывается и при первом входе, и при каждом реконнекте.
 @bot.event
 async def on_ready():
-    print(f"Робот {bot.user.name} успешно запущен и готов к работе!")
+    print(f"{bot.user.name} ready...")
     try:
-        # Синхронизируем слэш-команды (/) с серверами Discord.
-        # Это нужно, чтобы команды появились в интерфейсе Дискорда.
         synced_command = await bot.tree.sync()
 
 
@@ -63,39 +27,15 @@ async def on_ready():
     except Exception as e:
         print(f"Ошибка синхронизации команд: {e}")
 
-    if not morning_greeting.is_running():
-        morning_greeting.start()
-
-
-
-
-
-@bot.tree.command(name='schedule', description='Schedule of subjects')
-async def get_schedule(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    username = str(interaction.user)
-
-    add_user(user_id, username)
-
-
-    if user_id != admin:
-        await interaction.response.send_message("You don't have enough rights")
-        return
-
-    now = datetime.now(TZ)
-    embed_schedule = create_schedule_embed(now.weekday())
-
-    await interaction.response.send_message(embed=embed_schedule)
-
 
 
 
 @bot.tree.command(name="ping", description="Check bot latency")
 async def ping(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    username = str(interaction.user)
+    discord_id = interaction.user.id
+    nickname = str(interaction.user)
 
-    add_user(user_id, username)
+    save_user(discord_id, nickname)
 
 
     latency = round(bot.latency * 1000)
@@ -108,83 +48,110 @@ async def ping(interaction: discord.Interaction):
 
 @bot.tree.command(name='about', description='About the bot')
 async def about(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    username = str(interaction.user)
+    discord_id = interaction.user.id
+    nickname = str(interaction.user)
 
-    add_user(user_id, username)
+    save_user(discord_id, nickname)
 
-    await interaction.response.send_message('Creator: @plat0855\nWritten in Python')
+    await interaction.response.send_message('Creator: @plat0801\nWritten in Python')
 
 
 
 
 @bot.tree.command(name='random_number', description='Random number')
 async def random_number(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    username = str(interaction.user)
+    discord_id = interaction.user.id
+    nickname = str(interaction.user)
 
-    add_user(user_id, username)
+    save_user(discord_id, nickname)
 
     random_number = randint(1, 10)
     await interaction.response.send_message(f'Random number: {random_number}')
 
 
 
-
-
 @bot.tree.command(name='weather', description='Find out the weather')
-async def weather(interaction: discord.Interaction, city_param: str=default_city):
-    user_id = interaction.user.id
-    username = str(interaction.user)
+async def weather(interaction: discord.Interaction):
+    discord_id = interaction.user.id
+    nickname = str(interaction.user)
 
-    add_user(user_id, username)
+    save_user(discord_id, nickname)
 
-    await interaction.response.defer()
-
-
-    response = get_weather(city_param)
-
-
-    await interaction.followup.send(response)
-
-
-
-
-
-
-@bot.tree.command(name='add', description='Add new Italian word')
-async def add_new_italian_word(interaction: discord.Interaction, italian_word: str):
-    user_id = interaction.user.id
-    username = str(interaction.user)
 
 
     await interaction.response.defer()
 
 
-    translated = GoogleTranslator(source='it', target='en').translate(italian_word)
+    try:
+        default_city = os.getenv('CITY')
+        response = get_weather(default_city)
+
+        await interaction.followup.send_message(response)
+
+    except Exception as e:
+        await interaction.followup.send_message("Something wrong... I can't check the weather...")
+        # log_error
 
 
 
 
-    result_from_bd = new_word(user_id, username, italian_word, translated)
+@bot.tree.command(name='random_gif', description='Random gif')
+async def get_gif(interaction: discord.Interaction):
+    gifs = list_gifs()
 
 
-    await interaction.followup.send(result_from_bd)
+    if not gifs:
+        await interaction.response.send_message("No gifs... Add right now a new /add_gif")
+        return
+
+
+    random_fig = choice(gifs)
+
+    await interaction.response.send_message(random_fig)
 
 
 
-@bot.tree.command(name='dictionary', description='My dictionary')
-async def words(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    username = str(interaction.user)
 
 
-    result_from_bd = list_word(user_id, username)
+def check_url(url):
+    try:
+        if url.endswith('.gif'):
+            response = requests.head(url, allow_redirects=True, timeout=5)
+            return response.status_code < 400
 
 
-    await interaction.response.send_message(result_from_bd)
+        return False
 
 
+    except requests.RequestException:
+        return False
+
+
+@bot.tree.command(name='add_gif', description='Add new gif with mellstroy')
+async def add_gif(interaction: discord.Interaction, gif_url: str):
+    discord_id = interaction.user.id
+    nickname = str(interaction.user)
+
+
+    save_user(discord_id, nickname)
+
+
+
+    if check_url(gif_url):
+        save_gif(discord_id, gif_url)
+        await interaction.response.send_message('Added!')
+        return
+
+
+    await interaction.response.send_message('invalid url')
+
+
+
+
+
+load_dotenv()
+
+token = os.getenv('TOKEN')
 
 
 
